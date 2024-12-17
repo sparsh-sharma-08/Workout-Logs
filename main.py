@@ -2,194 +2,222 @@ import sqlite3
 import datetime
 
 def initialize_db():
-    conn=sqlite3.connect("workout_log.db")
-    cursor=conn.cursor()
+    conn = sqlite3.connect("workout_log.db")
+    cursor = conn.cursor()
 
-    cursor.execute("""CREATE TABLE IF NOT EXISTS workout_sessions(
-                    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date_time TEXT NOT NULL,
-                    target_muscle TEXT NOT NULL)
+    # Create Workout Sessions table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS workout_sessions (
+                        session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date_time TEXT NOT NULL,
+                        target_muscle TEXT NOT NULL)
                    """)
     
-    cursor.execute("""CREATE TABLE IF NOT EXISTS workout_exercises(
-                    exercise_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id INTEGER,
-                    exercise_name TEXT NOT NULL,
-                    set_number INTEGER NOT NULL,
-                    weight REAL NOT NULL,
-                    reps INTEGER NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES workout_sessions(session_id)
+    # Create Workout Exercises table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS workout_exercises (
+                        exercise_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id INTEGER,
+                        exercise_name TEXT NOT NULL,
+                        set_number INTEGER NOT NULL,
+                        weight REAL NOT NULL,
+                        reps INTEGER NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES workout_sessions(session_id)
                    )""")
-    
     conn.commit()
     return conn
 
+def reset_autoincrement(conn):
+    """Reset AUTOINCREMENT if tables are empty."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='workout_sessions'")
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='workout_exercises'")
+    except sqlite3.Error as e:
+        print(f"Error resetting AUTOINCREMENT: {e}")
+
 def get_time():
+    """Prompt user for time input or use current time."""
     while True:
-        choice=input("Do you want to set the current date and time (y/n): ").strip().lower()
-        if choice=="y":
-                current_time=datetime.datetime.now()
-                formatted_time=current_time.strftime("%d-%m-%Y | %I:%M %p")
-                print(formatted_time)
-                return formatted_time
-        elif choice=="n":
-                user_input_time= input("Enter the date and time (DD-MM-YYYY HH:MM AM/PM): ")
-                try:
-                    custom_time=datetime.datetime.strptime(user_input_time, "%d-%m-%Y %I:%M %p")
-                    formated_custom_time=custom_time.strftime("%d-%m-%Y | %I:%M %p")
-                    print(f"Entered Time: {formated_custom_time}")
-                    return formated_custom_time
-                except ValueError:
-                    print("Invalid format! Use DD-MM-YYYY HH-MM AM/PM")
+        choice = input("Do you want to set the current date and time (y/n): ").strip().lower()
+        if choice == "y":
+            current_time = datetime.datetime.now()
+            formatted_time = current_time.strftime("%d-%m-%Y | %I:%M %p")
+            print(f"Current Time: {formatted_time}")
+            return formatted_time
+        elif choice == "n":
+            user_input_time = input("Enter the date and time (DD-MM-YYYY HH:MM AM/PM): ")
+            try:
+                custom_time = datetime.datetime.strptime(user_input_time, "%d-%m-%Y %I:%M %p")
+                formatted_custom_time = custom_time.strftime("%d-%m-%Y | %I:%M %p")
+                print(f"Entered Time: {formatted_custom_time}")
+                return formatted_custom_time
+            except ValueError:
+                print("Invalid format! Use DD-MM-YYYY HH:MM AM/PM.")
         else:
-            print("Enter 'y' or 'n' only!")
+            print("Please enter 'y' or 'n' only.")
 
 def log_workout(conn):
+    """Log a new workout session and exercises."""
     workout_time = get_time()
-    target_muscle_choice = input("Enter Target Muscles: ").strip().title()
+    target_muscle = input("Enter Target Muscle Group: ").strip().title()
 
     try:
         cursor = conn.cursor()
-        insert_query = """INSERT INTO workout_sessions (date_time, target_muscle)
-                          VALUES(?,?)"""
-        cursor.execute(insert_query, (workout_time, target_muscle_choice))
-
+        cursor.execute("INSERT INTO workout_sessions (date_time, target_muscle) VALUES (?, ?)", 
+                       (workout_time, target_muscle))
         session_id = cursor.lastrowid
-        print(f"Session Logged Successfully! session_id {session_id}")
+        print(f"\nSession Logged Successfully! Session ID: {session_id}")
 
-        # Add exercises to this session
+        # Add exercises to the session
         print("\nAdd exercises to this session. Press 'ENTER' to stop.")
         while True:
             exercise_name = input("Enter Exercise Name (or press 'ENTER' to stop): ").strip().title()
-            if exercise_name.lower() == "":
+            if not exercise_name:
                 break
-
-            # Handle multiple sets for the same exercise
+            
             sets = []
             while True:
                 try:
                     set_number = int(input("Set Number: "))
                     weight = float(input("Weight Used (in KG): "))
                     reps = int(input("Total Reps Performed: "))
-                    
+
                     if set_number <= 0 or weight <= 0 or reps <= 0:
                         print("Please enter positive values for set number, weight, and reps.")
                         continue
-                    
                     sets.append((set_number, weight, reps))
 
                     more_sets = input("Do you want to add another set for this exercise? (y/n): ").strip().lower()
                     if more_sets != 'y':
                         break
                 except ValueError:
-                    print("Invalid input! Please enter valid numerical values for set, weight, and reps.")
+                    print("Invalid input! Please enter valid numerical values.")
             
-            # Insert multiple sets for the exercise
+            # Insert all sets into the database
             for set_number, weight, reps in sets:
-                insert_exercise_query = """INSERT INTO workout_exercises
-                                           (session_id, exercise_name, set_number, weight, reps)
-                                           VALUES (?, ?, ?, ?, ?)"""
-                cursor.execute(insert_exercise_query, (session_id, exercise_name, set_number, weight, reps))
-                print(f"'{exercise_name}' - Set {set_number} added to the database.")
-
+                cursor.execute("""INSERT INTO workout_exercises 
+                                  (session_id, exercise_name, set_number, weight, reps) 
+                                  VALUES (?, ?, ?, ?, ?)""", 
+                               (session_id, exercise_name, set_number, weight, reps))
+                print(f"'{exercise_name}' - Set {set_number} added.")
         conn.commit()
-
+        print("\nAll exercises logged successfully.")
     except sqlite3.Error as e:
         print(f"Database error: {e}")
 
-def view_log(conn):
+def view_logs(conn):
+    """View workout sessions and exercises."""
     try:
         cursor = conn.cursor()
+        cursor.execute("SELECT * FROM workout_sessions")
+        sessions = cursor.fetchall()
 
-        # Ask user if they want detailed session information
-        detail_choice = input("Do you want to view session details along with exercises? (y/n): ").strip().lower()
+        if not sessions:
+            print("\nNo workout sessions found!")
+            return
 
-        # Display Workout Sessions if user chooses to see session details
-        if detail_choice == 'y':
-            cursor.execute("SELECT * FROM workout_sessions")
-            sessions = cursor.fetchall()
-            print("\nWorkout Sessions:")
-            print("=" * 50)
-            for session in sessions:
-                session_id, date_time, target_muscle = session
-                print(f"Session ID: {session_id}")
-                print(f"Date & Time: {date_time}")
-                print(f"Target Muscle: {target_muscle}")
-                print("-" * 50)
+        print("\nWorkout Sessions:")
+        print("=" * 60)
+        for session in sessions:
+            print(f"Session ID: {session[0]} | Date & Time: {session[1]} | Target Muscle: {session[2]}")
+        print("=" * 60)
 
-        # Display Exercises with grouped sets (always show exercises)
-        cursor.execute("""
-        SELECT exercise_name,
-               GROUP_CONCAT(set_number ORDER BY set_number) AS set_numbers,
-               GROUP_CONCAT(weight ORDER BY set_number) AS weights,
-               GROUP_CONCAT(reps ORDER BY set_number) AS reps
-        FROM workout_exercises
-        GROUP BY exercise_name
-        """)
+        # Display exercises grouped by session
+        cursor.execute("""SELECT session_id, exercise_name, set_number, weight, reps 
+                          FROM workout_exercises ORDER BY session_id, set_number""")
         exercises = cursor.fetchall()
 
         print("\nExercises:")
-        print("=" * 50)
-        for exercise in exercises:
-            exercise_name = exercise[0]
-            set_numbers = exercise[1]
-            weights = exercise[2]
-            reps = exercise[3]
-
-            # Split the concatenated values into lists
-            set_numbers_list = set_numbers.split(',')
-            weights_list = weights.split(',')
-            reps_list = reps.split(',')
-
-            print(f"\nExercise Name: {exercise_name}")
-            print(f"Sets: {', '.join(set_numbers_list)}")
-            print(f"Weights (KG): {', '.join(weights_list)}")
-            print(f"Reps: {', '.join(reps_list)}")
-            print("-" * 50)
-
+        print("=" * 60)
+        for session_id, exercise_name, set_number, weight, reps in exercises:
+            print(f"Session ID: {session_id} | Exercise: {exercise_name} | Set: {set_number} | "
+                  f"Weight: {weight} KG | Reps: {reps}")
+        print("=" * 60)
     except sqlite3.Error as e:
-        print(f"Database Error: {e}")
+        print(f"Database error: {e}")
 
-def view_exercises(conn):
-    pass
+def delete_log(conn):
+    """Delete a workout session or exercise."""
+    try:
+        cursor = conn.cursor()
+        print("\n1. Delete a Workout Session")
+        print("2. Delete a Specific Exercise")
 
-def update_log():
-    pass
+        choice = input("Choose the option (1 or 2): ").strip()
+        if choice == "1":
+            cursor.execute("SELECT * FROM workout_sessions")
+            sessions = cursor.fetchall()
+            if not sessions:
+                print("\nNo sessions to delete!")
+                return
 
-def generate_report():
-    pass
+            for session in sessions:
+                print(f"Session ID: {session[0]} | Date & Time: {session[1]} | Target Muscle: {session[2]}")
+
+            session_id = input("Enter the Session ID to delete: ").strip()
+            cursor.execute("DELETE FROM workout_exercises WHERE session_id=?", (session_id,))
+            cursor.execute("DELETE FROM workout_sessions WHERE session_id=?", (session_id,))
+            print("\nSession and its exercises deleted successfully.")
+        
+        elif choice == "2":
+            cursor.execute("SELECT * FROM workout_exercises")
+            exercises = cursor.fetchall()
+            if not exercises:
+                print("\nNo exercises to delete!")
+                return
+
+            for exercise in exercises:
+                print(f"Exercise ID: {exercise[0]} | Session ID: {exercise[1]} | Exercise: {exercise[2]} | "
+                      f"Set: {exercise[3]} | Weight: {exercise[4]} KG | Reps: {exercise[5]}")
+            
+            exercise_id = input("Enter the Exercise ID to delete: ").strip()
+            cursor.execute("DELETE FROM workout_exercises WHERE exercise_id=?", (exercise_id,))
+            print("\nExercise deleted successfully.")
+        
+        else:
+            print("Invalid choice.")
+        
+        # Reset AUTOINCREMENT if needed
+        reset_autoincrement(conn)
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+
+def clear_all_logs(conn):
+    """Clear all workout logs."""
+    try:
+        confirm = input("\nAre you sure you want to clear all logs? (y/n): ").strip().lower()
+        if confirm == "y":
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM workout_exercises")
+            cursor.execute("DELETE FROM workout_sessions")
+            reset_autoincrement(conn)
+            conn.commit()
+            print("\nAll logs have been cleared.")
+        else:
+            print("\nOperation canceled.")
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
 
 def main():
-    conn=initialize_db()
+    conn = initialize_db()
     try:
         while True:
-            print("Workout Tracker")
+            print("\nWorkout Tracker")
             print("1. Log New Workout")
-            print("2. View Complete Workout Logs (sessions and exercises)")
-            print("3. View Only Exercises Logs")
-            print("4. Update Log")
-            print("5. Generate Performance Report")
-            print("6. Exit")
+            print("2. View Workout Logs")
+            print("3. Delete Log")
+            print("4. Clear All Logs")
+            print("5. Exit")
 
-            user_input=input("Enter the operation: ")
-            match user_input:
-                case '1':
-                    log_workout(conn)
-                case '2':
-                    view_log(conn)
-                case '3':
-                    view_exercises(conn)
-                case '4':
-                    update_log(conn)
-                case '5':
-                    generate_report(conn)
-                case '6':
-                    break
-                case _:
-                    print("Please enter a valid input!")
+            choice = input("Enter your choice: ").strip()
+            match choice:
+                case '1': log_workout(conn)
+                case '2': view_logs(conn)
+                case '3': delete_log(conn)
+                case '4': clear_all_logs(conn)
+                case '5': break
+                case _: print("Invalid choice! Please enter a valid option.")
     except Exception as e:
-        print(f"Error Encounterd: {e}")
-
-
-if __name__=="__main__":
+        print(f"Error encountered: {e}")
+if __name__ == "__main__":
     main()
